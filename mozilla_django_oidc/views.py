@@ -214,7 +214,7 @@ class OIDCBackChannelLogoutView(View):
 def get_op_logout_url(request=None):
     post_redirect_uri = absolutify(
         request,
-        reverse('home')
+        reverse(import_from_settings('LOGOUT_REDIRECT_URL', '/'))
     )
     params = {
         'post_logout_redirect_uri': post_redirect_uri,
