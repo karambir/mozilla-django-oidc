@@ -112,6 +112,8 @@ class OIDCAuthenticationBackend(ModelBackend):
 
     def verify_token(self, token, **kwargs):
         """Validate the token signature."""
+        nonce = kwargs.get('nonce')
+
         if self.OIDC_RP_SIGN_ALGO.startswith('RS'):
             key = self.OIDC_RP_IDP_SIGN_KEY
         else:
