@@ -7,19 +7,18 @@ import requests
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.core.exceptions import SuspiciousOperation, ImproperlyConfigured
+from django.utils import six
+from django.utils.encoding import force_bytes, smart_bytes, smart_text
+from django.utils.module_loading import import_string
+from josepy.jwk import JWK
+from josepy.jws import JWS
+from mozilla_django_oidc.utils import absolutify, import_from_settings
+
 try:
     from django.urls import reverse
 except ImportError:
     # Django < 2.0.0
     from django.core.urlresolvers import reverse
-from django.utils.encoding import force_bytes, smart_text, smart_bytes
-from django.utils.module_loading import import_string
-from django.utils import six
-
-from josepy.jwk import JWK
-from josepy.jws import JWS
-
-from mozilla_django_oidc.utils import absolutify, import_from_settings
 
 
 LOGGER = logging.getLogger(__name__)
@@ -113,8 +112,6 @@ class OIDCAuthenticationBackend(ModelBackend):
 
     def verify_token(self, token, **kwargs):
         """Validate the token signature."""
-        nonce = kwargs.get('nonce')
-
         if self.OIDC_RP_SIGN_ALGO.startswith('RS'):
             key = self.OIDC_RP_IDP_SIGN_KEY
         else:
@@ -133,12 +130,11 @@ class OIDCAuthenticationBackend(ModelBackend):
         # In Python3.6, the json.loads() function can accept a byte string
         # as it will automagically decode it to a unicode string before
         # deserializing https://bugs.python.org/issue17909
-        token_nonce = json.loads(verified_token.decode('utf-8')).get('nonce')
-
-        if import_from_settings('OIDC_USE_NONCE', True) and nonce != token_nonce:
+        token_dic = json.loads(verified_token.decode('utf-8'))
+        if import_from_settings('OIDC_USE_NONCE', True) and nonce != token_dic.get('nonce'):
             msg = 'JWT Nonce verification failed.'
             raise SuspiciousOperation(msg)
-        return True
+        return token_dic
 
     def authenticate(self, **kwargs):
         """Authenticates a user based on the OIDC code flow."""
@@ -175,48 +171,51 @@ class OIDCAuthenticationBackend(ModelBackend):
         # Validate the token
         token_response = response.json()
         id_token = token_response.get('id_token')
-        if self.verify_token(id_token, nonce=nonce):
-            access_token = token_response.get('access_token')
 
-            if import_from_settings('OIDC_STORE_ACCESS_TOKEN', False):
-                session['oidc_access_token'] = access_token
+        verified_token = self.verify_token(id_token, nonce=nonce)
+        sid = verified_token.get('sid')
+        if sid:
+            session['oidc_sid'] = sid
+        access_token = token_response.get('access_token')
 
-            if import_from_settings('OIDC_STORE_ID_TOKEN', False):
-                session['oidc_id_token'] = id_token
+        if import_from_settings('OIDC_STORE_ACCESS_TOKEN', False):
+            session['oidc_access_token'] = access_token
 
-            user_response = requests.get(self.OIDC_OP_USER_ENDPOINT,
-                                         headers={
-                                             'Authorization': 'Bearer {0}'.format(access_token)
-                                         },
-                                         verify=import_from_settings('OIDC_VERIFY_SSL', True))
-            user_response.raise_for_status()
+        if import_from_settings('OIDC_STORE_ID_TOKEN', False):
+            session['oidc_id_token'] = id_token
 
-            user_info = user_response.json()
-            email = user_info.get('email')
+        user_response = requests.get(self.OIDC_OP_USER_ENDPOINT,
+                                     headers={
+                                         'Authorization': 'Bearer {0}'.format(access_token)
+                                     },
+                                     verify=import_from_settings('OIDC_VERIFY_SSL', True))
+        user_response.raise_for_status()
 
-            claims_verified = self.verify_claims(user_info)
-            if not claims_verified:
-                LOGGER.debug('Login failed: Claims verification for %s failed.', email)
-                return None
+        user_info = user_response.json()
+        email = user_info.get('email')
 
-            # email based filtering
-            users = self.filter_users_by_claims(user_info)
+        claims_verified = self.verify_claims(user_info)
+        if not claims_verified:
+            LOGGER.debug('Login failed: Claims verification for %s failed.', email)
+            return None
 
-            if len(users) == 1:
-                return users[0]
-            elif len(users) > 1:
-                # In the rare case that two user accounts have the same email address,
-                # log and bail. Randomly selecting one seems really wrong.
-                LOGGER.warn('Multiple users with email address %s.', email)
-                return None
-            elif import_from_settings('OIDC_CREATE_USER', True):
-                user = self.create_user(user_info)
-                return user
-            else:
-                LOGGER.debug('Login failed: No user with email %s found, and '
-                             'OIDC_CREATE_USER is False', email)
-                return None
-        return None
+        # email based filtering
+        users = self.filter_users_by_claims(user_info)
+
+        if len(users) == 1:
+            return users[0]
+        elif len(users) > 1:
+            # In the rare case that two user accounts have the same email address,
+            # log and bail. Randomly selecting one seems really wrong.
+            LOGGER.warn('Multiple users with email address %s.', email)
+            return None
+        elif import_from_settings('OIDC_CREATE_USER', True):
+            user = self.create_user(user_info)
+            return user
+        else:
+            LOGGER.debug('Login failed: No user with email %s found, and '
+                         'OIDC_CREATE_USER is False', email)
+            return None
 
     def get_user(self, user_id):
         """Return a user based on the id."""

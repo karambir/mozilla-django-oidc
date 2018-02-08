@@ -13,16 +13,20 @@ except ImportError:
     # Django < 2.0.0
     from django.core.urlresolvers import reverse
 from django.contrib import auth
-from django.http import HttpResponseRedirect
+from django.core.cache import cache
+from django.http import HttpResponseRedirect, HttpResponse, HttpResponseBadRequest
 from django.utils.crypto import get_random_string
 from django.utils.http import is_safe_url
 from django.utils.module_loading import import_string
 from django.views.generic import View
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 
 from mozilla_django_oidc.utils import (
     absolutify,
     import_from_settings,
-    is_authenticated
+    is_authenticated,
+    verify_logout_token
 )
 
 
@@ -174,9 +178,54 @@ class OIDCLogoutView(View):
             # from the OP.
             logout_from_op = import_from_settings('OIDC_OP_LOGOUT_URL_METHOD', '')
             if logout_from_op:
-                logout_url = import_string(logout_from_op)()
+                logout_url = import_string(logout_from_op)(request=request)
 
             # Log out the Django user if they were logged in.
             auth.logout(request)
 
         return HttpResponseRedirect(logout_url)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class OIDCBackChannelLogoutView(View):
+    """Back Channel Logout view"""
+
+    http_method_names = ['post']
+
+    def post(self, request):
+        """Log out the user with given sid and sub."""
+        error_message = 'Need signed logout token'
+        token = request.POST.get('logout_token')
+        if not token:
+            return HttpResponseBadRequest(error_message)
+
+        logout_token_dic = verify_logout_token(token)
+
+        sid = logout_token_dic.get('sid')
+        if not sid:
+            return HttpResponseBadRequest(error_message)
+        sid_cache_key_prefix = import_from_settings('OIDC_LOGOUT_SID_KEY_PREFIX', 'oidc_sid')
+        sid_cache_key = '{}_{}'.format(sid_cache_key_prefix, sid)
+        cache.set(sid_cache_key, True)
+
+        return HttpResponse('Success')
+
+
+def get_op_logout_url(request=None):
+    post_redirect_uri = absolutify(
+        request,
+        reverse('home')
+    )
+    params = {
+        'post_logout_redirect_uri': post_redirect_uri,
+        'returnTo': post_redirect_uri,  # Auth0 specific parameter
+    }
+    is_id_token = import_from_settings('OIDC_STORE_ID_TOKEN', False)
+    if is_id_token and request:
+        params['id_token_hint'] = request.session.get('oidc_id_token')
+    query = urlencode(params)
+    redirect_url = '{url}?{query}'.format(
+        url=import_from_settings('OIDC_OP_LOGOUT_URL', '/'),
+        query=query
+    )
+    return redirect_url

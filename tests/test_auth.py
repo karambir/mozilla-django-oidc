@@ -60,7 +60,9 @@ class OIDCAuthenticationBackendTestCase(TestCase):
                                                      'state': 'bar'})
         auth_request.session = {}
 
-        token_mock.return_value = None
+        token_mock.return_value = {
+            'sid': 'testsid',
+        }
         get_json_mock = Mock()
         get_json_mock.json.return_value = {
             'nickname': 'username',
@@ -96,7 +98,9 @@ class OIDCAuthenticationBackendTestCase(TestCase):
 
         user = User.objects.create_user(username='a_username',
                                         email='email@example.com')
-        token_mock.return_value = True
+        token_mock.return_value = {
+            'sid': 'testsid',
+        }
         get_json_mock = Mock()
         get_json_mock.json.return_value = {
             'nickname': 'a_username',
@@ -118,7 +122,7 @@ class OIDCAuthenticationBackendTestCase(TestCase):
             'redirect_uri': 'http://testserver/callback/'
         }
         self.assertEqual(self.backend.authenticate(request=auth_request), user)
-        token_mock.assert_called_once_with('id_token', nonce=None)
+        token_mock.assert_called_once_with('id_token', 'nonce')
         request_mock.post.assert_called_once_with('https://server.example.com/token',
                                                   data=post_data,
                                                   verify=True)
@@ -140,7 +144,9 @@ class OIDCAuthenticationBackendTestCase(TestCase):
 
         user = User.objects.create_user(username='a_username',
                                         email='EMAIL@EXAMPLE.COM')
-        token_mock.return_value = True
+        token_mock.return_value = {
+            'sid': 'testsid',
+        }
         get_json_mock = Mock()
         get_json_mock.json.return_value = {
             'nickname': 'a_username',
@@ -162,7 +168,7 @@ class OIDCAuthenticationBackendTestCase(TestCase):
             'redirect_uri': 'http://testserver/callback/'
         }
         self.assertEqual(self.backend.authenticate(request=auth_request), user)
-        token_mock.assert_called_once_with('id_token', nonce=None)
+        token_mock.assert_called_once_with('id_token', 'nonce')
         request_mock.post.assert_called_once_with('https://server.example.com/token',
                                                   data=post_data,
                                                   verify=True)
@@ -185,7 +191,9 @@ class OIDCAuthenticationBackendTestCase(TestCase):
 
         User.objects.create_user(username='a_username',
                                  email='email@example.com')
-        token_mock.return_value = True
+        token_mock.return_value = {
+            'sid': 'testsid',
+        }
         claims_mock.return_value = False
         get_json_mock = Mock()
         claims_response = {
@@ -209,7 +217,7 @@ class OIDCAuthenticationBackendTestCase(TestCase):
             'redirect_uri': 'http://testserver/callback/'
         }
         self.assertIsNone(self.backend.authenticate(request=auth_request))
-        token_mock.assert_called_once_with('id_token', nonce=None)
+        token_mock.assert_called_once_with('id_token', 'nonce')
         claims_mock.assert_called_once_with(claims_response)
         request_mock.post.assert_called_once_with('https://server.example.com/token',
                                                   data=post_data,
@@ -230,7 +238,9 @@ class OIDCAuthenticationBackendTestCase(TestCase):
         auth_request.session = {}
 
         algo_mock.return_value = 'username_algo'
-        token_mock.return_value = True
+        token_mock.return_value = {
+            'sid': 'testsid',
+        }
         get_json_mock = Mock()
         get_json_mock.json.return_value = {
             'nickname': 'a_username',
@@ -257,7 +267,7 @@ class OIDCAuthenticationBackendTestCase(TestCase):
         self.assertEquals(user.email, 'email@example.com')
         self.assertEquals(user.username, 'username_algo')
 
-        token_mock.assert_called_once_with('id_token', nonce=None)
+        token_mock.assert_called_once_with('id_token', 'nonce')
         request_mock.post.assert_called_once_with('https://server.example.com/token',
                                                   data=post_data,
                                                   verify=True)

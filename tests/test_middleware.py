@@ -197,7 +197,7 @@ class MiddlewareTestCase(TestCase):
         middleware = RefreshIDToken()
         self.assertEquals(
             sorted(middleware.get_exempt_urls()),
-            [u'/authenticate/', u'/callback/', u'/logout/', u'/mdo_fake_view/']
+            [u'/authenticate/', u'/callback/', u'/logout/', u'/logout/back/', u'/mdo_fake_view/']
         )
 
     @override_settings(OIDC_EXEMPT_URLS=['/foo/'])
@@ -205,7 +205,7 @@ class MiddlewareTestCase(TestCase):
         middleware = RefreshIDToken()
         self.assertEquals(
             sorted(middleware.get_exempt_urls()),
-            [u'/authenticate/', u'/callback/', u'/foo/', u'/logout/']
+            [u'/authenticate/', u'/callback/', u'/foo/', u'/logout/', u'/logout/back/']
         )
 
     def test_anonymous(self):

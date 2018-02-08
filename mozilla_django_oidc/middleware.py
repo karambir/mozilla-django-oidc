@@ -14,13 +14,14 @@ except ImportError:
     from django.core.urlresolvers import reverse
 from django.http import HttpResponseRedirect
 from django.utils.crypto import get_random_string
+from django.contrib import auth
+from django.core.cache import cache
 
 from mozilla_django_oidc.utils import (
     absolutify,
     import_from_settings,
     is_authenticated
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +58,7 @@ class RefreshIDToken(MiddlewareMixin):
             'oidc_authentication_init',
             'oidc_authentication_callback',
             'oidc_logout',
+            'oidc_back_logout',
         ])
 
         return [
@@ -126,3 +128,40 @@ class RefreshIDToken(MiddlewareMixin):
         query = urlencode(params)
         redirect_url = '{url}?{query}'.format(url=auth_url, query=query)
         return HttpResponseRedirect(redirect_url)
+
+
+class LogoutSIDTokenUser(MiddlewareMixin):
+    """Logout user with sid token in session
+
+    For users authenticated with an id_token, we need to check that it's
+    sid value in session is not logout cache. If it is, logout user.
+
+    """
+    def is_logoutable_url(self, request):
+        """Takes a request and returns whether it triggers a refresh examination
+
+        :arg HttpRequest request:
+
+        :returns: boolean
+
+        """
+        return (
+                request.method == 'GET' and
+                is_authenticated(request.user) and
+                not request.is_ajax()
+        )
+
+    def process_request(self, request):
+        if not self.is_logoutable_url(request):
+            LOGGER.debug('request is not logout-able')
+            return
+
+        sid = request.session.get('oidc_sid')
+        if not sid:
+            return
+        sid_cache_key_prefix = import_from_settings('OIDC_LOGOUT_SID_KEY_PREFIX', 'oidc_sid')
+        sid_cache_key = '{}_{}'.format(sid_cache_key_prefix, sid)
+        if cache.get(sid_cache_key):
+            auth.logout(request)
+            cache.delete(sid_cache_key)
+        return
