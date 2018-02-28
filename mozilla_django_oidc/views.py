@@ -188,11 +188,14 @@ class OIDCLogoutView(View):
         return HttpResponseRedirect(logout_url)
 
 
-@method_decorator(csrf_exempt, name='dispatch')
 class OIDCBackChannelLogoutView(View):
     """Back Channel Logout view"""
 
     http_method_names = ['post']
+
+    @method_decorator(csrf_exempt)
+    def dispatch(self, *args, **kwargs):
+        return super(OIDCBackChannelLogoutView, self).dispatch(*args, **kwargs)
 
     def post(self, request):
         """Log out the user with given sid and sub."""
