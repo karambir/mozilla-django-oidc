@@ -56,7 +56,7 @@ def verify_jws(payload, key):
 
     try:
         alg = jws.signature.combined.alg.name
-        if alg != import_from_settings('OIDC_RP_SIGN_ALGO', None):
+        if alg != import_from_settings('OIDC_RP_SIGN_ALGO', 'HS256'):
             msg = 'The specified alg value is not allowed'
             raise SuspiciousOperation(msg)
     except KeyError:
