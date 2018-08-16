@@ -3,6 +3,56 @@
 History
 -------
 
+1.1.1 (2018-08-09)
++++++++++++++++++++
+
+* Fix `is_safe_url` on Django 2.1
+* Fix signature in `authenticate` method to be compatible with Django 2.1
+* Remove legacy code for unsupported Django < 1.11
+  Thanks `@SirTyson`_
+
+
+1.1.0 (2018-08-02)
++++++++++++++++++++
+
+* Installation doc fixes
+  Thanks `@mklan`_
+* Drop support for unsupported Django 1.8 and Python 3.3.
+* Refactor authentication backend to make it easier to extend
+  Required by DRF support feature.
+* Add DRF support
+  Thanks `@anlutro`_
+* Improve local docker environment setup
+* Add flag to allow using unsecured tokens
+* Allow using JWK with optional ``alg``
+  Thanks `@Algogator`_
+
+
+1.0.0 (2018-05-09)
+++++++++++++++++++
+
+* Add OIDC_AUTHENTICATION_CALLBACK_URL as a new configuration parameter
+* Fail earlier when JWS algorithm does not OIDC_RP_SIGN_ALGO.
+  Thanks `@anlutro`_
+* RS256 verification through ``settings.OIDC_OP_JWKS_ENDPOINT``
+  Thanks `@GermanoGuerrini`_
+* Refactor OIDCAuthenticationBackend so that token retrieval methods can be overridden in a subclass when you need to.
+
+Backwards-incompatible changes:
+
+* ``OIDC_OP_LOGOUT_URL_METHOD`` takes a ``request`` parameter now.
+* Changed name of ``RefreshIDToken`` middleware to ``SessionRefresh``.
+
+
+.. _`@anlutro`: https://github.com/anlutro
+
+0.6.0 (2018-03-27)
+++++++++++++++++++
+
+* Add e2e tests and automation
+* Add caching for exempt URLs
+* Fix logout when session refresh fails
+
 0.5.0 (2018-01-10)
 ++++++++++++++++++
 

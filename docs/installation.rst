@@ -47,6 +47,24 @@ The OpenID Connect provider (OP) will then give you the following:
 
 You'll need these values for settings.
 
+Choose the appropriate algorithm
+--------------------------------
+
+Depending on your OpenID Connect provider (OP) you might need to change the
+default signing algorithm from ``HS256`` to ``RS256`` by settings the
+``OIDC_RP_SIGN_ALGO`` value accordingly.
+
+For ``RS256`` algorithm to work, you need to set either the OP signing key or
+the OP JWKS Endpoint.
+
+The corresponding settings values are:
+
+.. code-block:: python
+
+    OIDC_RP_IDP_SIGN_KEY = "<OP signing key in PEM or DER format>"
+    OIDC_OP_JWKS_ENDPOINT = "<URL of the OIDC OP jwks endpoint>"
+
+If both specified, the key takes precedence.
 
 Add settings to settings.py
 ---------------------------
@@ -65,8 +83,6 @@ Start by making the following changes to your ``settings.py`` file.
 
    # Add 'mozilla_django_oidc' authentication backend
    AUTHENTICATION_BACKENDS = (
-       # ...
-       'django.contrib.auth.backends.ModelBackend',
        'mozilla_django_oidc.auth.OIDCAuthenticationBackend',
        # ...
    )
@@ -115,7 +131,7 @@ These values relate to your site.
 
 .. code-block:: python
 
-   LOGIN_REDIRECT_URL = "<ULR path to redirect to after login>"
+   LOGIN_REDIRECT_URL = "<URL path to redirect to after login>"
    LOGOUT_REDIRECT_URL = "<URL path to redirect to after logout>"
 
 
@@ -156,7 +172,7 @@ Django templates example:
 
 Jinja2 templates example:
 
-.. code-block:: html+jinja2
+.. code-block:: html+jinja
 
    <html>
      <body>
@@ -186,21 +202,22 @@ his/her corporate account, but continue to use your website.
 
 To handle this scenario, your website needs to know if the user's id token with
 the OIDC provider is still valid. You need to use the
-:py:class:`mozilla_django_oidc.middleware.RefreshIDToken` middleware.
+:py:class:`mozilla_django_oidc.middleware.SessionRefresh` middleware.
 
 To add it to your site, put it in the settings::
 
     MIDDLEWARE_CLASSES = [
         # middleware involving session and authentication must come first
         # ...
-        'mozilla_django_oidc.middleware.RefreshIDToken',
+        'mozilla_django_oidc.middleware.SessionRefresh',
         # ...
     ]
 
 
-The ``RefreshIDToken`` middleware will check to see if the user's id token has
-expired and if so, redirect to the OIDC provider's authentication endpoint
-for a silent re-auth. That will redirect back to the page the user was going to.
+The :py:class:`mozilla_django_oidc.middleware.SessionRefresh` middleware will
+check to see if the user's id token has expired and if so, redirect to the OIDC
+provider's authentication endpoint for a silent re-auth. That will redirect back
+to the page the user was going to.
 
 The length of time it takes for an id token to expire is set in
 ``settings.OIDC_RENEW_ID_TOKEN_EXPIRY_SECONDS`` which defaults to 15 minutes.
@@ -230,7 +247,7 @@ email address. Then we could do this:
    from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
    class MyOIDCAB(OIDCAuthenticationBackend):
-       def filter_users_by_claims(self, claim):
+       def filter_users_by_claims(self, claims):
            email = claims.get('email')
            if not email:
                return self.UserModel.objects.none()
@@ -297,7 +314,7 @@ Changing how Django users are created
 If your website needs to do other bookkeeping things when a new ``User`` record
 is created, then you should subclass the
 :py:class:`mozilla_django_oidc.auth.OIDCAuthenticationBackend` class and
-override the `create_user` method.
+override the `create_user` method, and optionally, the `update_user` method.
 
 For example, let's say you want to populate the ``User`` instance with other
 data from the claims:
@@ -311,8 +328,16 @@ data from the claims:
        def create_user(self, claims):
            user = super(MyOIDCAB, self).create_user(claims)
 
-           user.first_name = claim.get('given_name', '')
-           user.last_name = claim.get('family_name', '')
+           user.first_name = claims.get('given_name', '')
+           user.last_name = claims.get('family_name', '')
+           user.save()
+
+           return user
+
+       def update_user(self, user, claims):
+           user.first_name = claims.get('given_name', '')
+           user.last_name = claims.get('family_name', '')
+           user.save()
 
            return user
 
@@ -361,6 +386,33 @@ override the `verify_claims` method. It should return either ``True`` or
 .. seealso::
 
    https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
+
+
+Log user out of the OpenID Connect provider
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When a user logs out, by default, mozilla-django-oidc will end the current
+Django session.  However, the user may still have an active session with the
+OpenID Connect provider, in which case, the user would likely not be prompted
+to log back in.
+
+Some OpenID Connect providers support a custom (not part of OIDC spec) mechanism
+to end the provider's session.  We can build a function for
+``OIDC_OP_LOGOUT_URL_METHOD`` that will redirect the user to the provider after
+mozilla-django-oidc ends the Django session.
+
+
+.. code-block:: python
+
+   def provider_logout(request):
+       # See your provider's documentation for details on if and how this is
+       # supported
+       redirect_url = 'https://myprovider.com/logout'
+       return redirect_url
+
+
+The ``request.build_absolute_uri`` can be used if the provider requires
+a return-to location.
 
 
 Troubleshooting

@@ -67,7 +67,16 @@ class OIDCAuthenticationCallbackView(View):
             # Make sure that nonce is not used twice
             del request.session['oidc_nonce']
 
-        if 'code' in request.GET and 'state' in request.GET:
+        if request.GET.get('error'):
+            # Ouch! Something important failed.
+            # Make sure the user doesn't get to continue to be logged in
+            # otherwise the refresh middleware will force the user to
+            # redirect to authorize again if the session refresh has
+            # expired.
+            if is_authenticated(request.user):
+                auth.logout(request)
+            assert not is_authenticated(request.user)
+        elif 'code' in request.GET and 'state' in request.GET:
             kwargs = {
                 'request': request,
                 'nonce': nonce,
@@ -103,11 +112,16 @@ def get_next_url(request, redirect_field_name):
     if next_url:
         kwargs = {
             'url': next_url,
-            'host': request.get_host()
+            'require_https': request.is_secure()
         }
-        # NOTE(willkg): Django 1.11+ allows us to require https, too.
-        if django.VERSION >= (1, 11):
-            kwargs['require_https'] = request.is_secure()
+
+        # NOTE(robhudson): Django 2.1 changes `host` to `allowed_hosts`.
+        host = request.get_host()
+        if django.VERSION >= (2, 1):
+            kwargs['allowed_hosts'] = host
+        else:
+            kwargs['host'] = host
+
         is_safe = is_safe_url(**kwargs)
         if is_safe:
             return next_url
@@ -129,6 +143,8 @@ class OIDCAuthenticationRequestView(View):
         """OIDC client authentication initialization HTTP endpoint"""
         state = get_random_string(import_from_settings('OIDC_STATE_SIZE', 32))
         redirect_field_name = import_from_settings('OIDC_REDIRECT_FIELD_NAME', 'next')
+        reverse_url = import_from_settings('OIDC_AUTHENTICATION_CALLBACK_URL',
+                                           'oidc_authentication_callback')
 
         params = {
             'response_type': 'code',
@@ -136,13 +152,12 @@ class OIDCAuthenticationRequestView(View):
             'client_id': self.OIDC_RP_CLIENT_ID,
             'redirect_uri': absolutify(
                 request,
-                reverse('oidc_authentication_callback')
+                reverse(reverse_url)
             ),
             'state': state,
         }
 
-        extra = import_from_settings('OIDC_AUTH_REQUEST_EXTRA_PARAMS', {})
-        params.update(extra)
+        params.update(self.get_extra_params(request))
 
         if import_from_settings('OIDC_USE_NONCE', True):
             nonce = get_random_string(import_from_settings('OIDC_NONCE_SIZE', 32))
@@ -157,6 +172,9 @@ class OIDCAuthenticationRequestView(View):
         query = urlencode(params)
         redirect_url = '{url}?{query}'.format(url=self.OIDC_OP_AUTH_ENDPOINT, query=query)
         return HttpResponseRedirect(redirect_url)
+
+    def get_extra_params(self, request):
+        return import_from_settings('OIDC_AUTH_REQUEST_EXTRA_PARAMS', {})
 
 
 class OIDCLogoutView(View):
@@ -178,9 +196,9 @@ class OIDCLogoutView(View):
             # from the OP.
             logout_from_op = import_from_settings('OIDC_OP_LOGOUT_URL_METHOD', '')
             if logout_from_op:
-                logout_url = import_string(logout_from_op)(request=request)
+                logout_url = import_string(logout_from_op)(request)
             else:
-                logout_url = get_op_logout_url(request=request)
+                logout_url = get_op_logout_url(request)
 
             # Log out the Django user if they were logged in.
             auth.logout(request)
@@ -204,9 +222,9 @@ class OIDCBackChannelLogoutView(View):
         if not token:
             return HttpResponseBadRequest(error_message)
 
-        logout_token_dic = verify_logout_token(token)
+        payload = verify_logout_token(token)
 
-        sid = logout_token_dic.get('sid')
+        sid = payload.get('sid')
         if not sid:
             return HttpResponseBadRequest(error_message)
         sid_cache_key_prefix = import_from_settings('OIDC_LOGOUT_SID_KEY_PREFIX', 'oidc_sid')

@@ -12,11 +12,15 @@ try:
 except ImportError:
     # Django < 2.0.0
     from django.core.urlresolvers import reverse
-from django.http import HttpResponseRedirect
+from django.contrib.auth import BACKEND_SESSION_KEY
+from django.http import HttpResponseRedirect, JsonResponse
 from django.utils.crypto import get_random_string
 from django.contrib import auth
 from django.core.cache import cache
+from django.utils.functional import cached_property
+from django.utils.module_loading import import_string
 
+from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 from mozilla_django_oidc.utils import (
     absolutify,
     import_from_settings,
@@ -35,16 +39,17 @@ else:
         pass
 
 
-class RefreshIDToken(MiddlewareMixin):
-    """Renews id_tokens after expiry seconds
+class SessionRefresh(MiddlewareMixin):
+    """Refreshes the session with the OIDC RP after expiry seconds
 
-    For users authenticated with an id_token, we need to check that it's still
-    valid after a specific amount of time and if not, force them to
-    re-authenticate silently.
+    For users authenticated with the OIDC RP, verify tokens are still valid and
+    if not, force the user to re-authenticate silently.
 
     """
-    def get_exempt_urls(self):
-        """Generate and return a set of url paths to exempt from RefreshIDToken
+
+    @cached_property
+    def exempt_urls(self):
+        """Generate and return a set of url paths to exempt from SessionRefresh
 
         This takes the value of ``settings.OIDC_EXEMPT_URLS`` and appends three
         urls that mozilla-django-oidc uses. These values can be view names or
@@ -61,10 +66,10 @@ class RefreshIDToken(MiddlewareMixin):
             'oidc_back_logout',
         ])
 
-        return [
+        return set([
             url if url.startswith('/') else reverse(url)
             for url in exempt_urls
-        ]
+        ])
 
     def is_refreshable_url(self, request):
         """Takes a request and returns whether it triggers a refresh examination
@@ -74,13 +79,18 @@ class RefreshIDToken(MiddlewareMixin):
         :returns: boolean
 
         """
-        exempt_urls = self.get_exempt_urls()
+        # Do not attempt to refresh the session if the OIDC backend is not used
+        backend_session = request.session.get(BACKEND_SESSION_KEY)
+        is_oidc_enabled = True
+        if backend_session:
+            auth_backend = import_string(backend_session)
+            is_oidc_enabled = issubclass(auth_backend, OIDCAuthenticationBackend)
 
         return (
             request.method == 'GET' and
             is_authenticated(request.user) and
-            request.path not in exempt_urls and
-            not request.is_ajax()
+            is_oidc_enabled and
+            request.path not in self.exempt_urls
         )
 
     def process_request(self, request):
@@ -127,10 +137,22 @@ class RefreshIDToken(MiddlewareMixin):
 
         query = urlencode(params)
         redirect_url = '{url}?{query}'.format(url=auth_url, query=query)
+        if request.is_ajax():
+            # Almost all XHR request handling in client-side code struggles
+            # with redirects since redirecting to a page where the user
+            # is supposed to do something is extremely unlikely to work
+            # in an XHR request. Make a special response for these kinds
+            # of requests.
+            # The use of 403 Forbidden is to match the fact that this
+            # middleware doesn't really want the user in if they don't
+            # refresh their session.
+            response = JsonResponse({'refresh_url': redirect_url}, status=403)
+            response['refresh_url'] = redirect_url
+            return response
         return HttpResponseRedirect(redirect_url)
 
 
-class LogoutSIDTokenUser(MiddlewareMixin):
+class LogoutSIDTokenUser(SessionRefresh):
     """Logout user with sid token in session
 
     For users authenticated with an id_token, we need to check that it's
@@ -145,11 +167,7 @@ class LogoutSIDTokenUser(MiddlewareMixin):
         :returns: boolean
 
         """
-        return (
-                request.method == 'GET' and
-                is_authenticated(request.user) and
-                not request.is_ajax()
-        )
+        return self.is_refreshable_url(request)
 
     def process_request(self, request):
         if not self.is_logoutable_url(request):

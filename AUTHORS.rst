@@ -20,3 +20,8 @@ Contributors
 * Giorgos Logiotatidis (`@glogiotatidis <https://github.com/glogiotatidis>`_)
 * Olle Jonsson (`@olleolleolle <https://github.com/olleolleolle>`_)
 * `@GermanoGuerrini <https://github.com/GermanoGuerrini>`_
+* John Paulett (`@johnpaulett <https://github.com/johnpaulett>`_)
+* Andreas Lutro (`@anlutro <https://github.com/anlutro>`_)
+* `@Algogator <https://github.com/Algogator>`_
+* Rob Hudson (`@robhudson <https://github.com/robhudson>`_)
+* Garand Tyson (`@SirTyson <https://github.com/SirTyson>`_)

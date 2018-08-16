@@ -3,13 +3,16 @@ mozilla-django-oidc
 ===================
 
 .. image:: https://badge.fury.io/py/mozilla-django-oidc.svg
-    :target: https://badge.fury.io/py/mozilla-django-oidc
+   :target: https://badge.fury.io/py/mozilla-django-oidc
 
 .. image:: https://travis-ci.org/mozilla/mozilla-django-oidc.svg?branch=master
-    :target: https://travis-ci.org/mozilla/mozilla-django-oidc
+   :target: https://travis-ci.org/mozilla/mozilla-django-oidc
 
-.. image:: https://img.shields.io/codecov/c/github/mozilla/mozilla-django-oidc.svg
+.. image:: https://codecov.io/gh/mozilla/mozilla-django-oidc/branch/master/graph/badge.svg
    :target: https://codecov.io/gh/mozilla/mozilla-django-oidc
+
+.. image:: https://circleci.com/gh/mozilla/mozilla-django-oidc/tree/master.svg?style=svg
+   :target: https://circleci.com/gh/mozilla/mozilla-django-oidc/tree/master
 
 A lightweight authentication and access management library for integration with OpenID Connect enabled authentication services.
 
@@ -45,8 +48,7 @@ Django of your choice. Here is such an example:
 
     $ virtualenv -p /path/to/bin/python3.5 venv
     $ source venv
-    (venv) $ pip install Django==1.11.2
-    (venv) $ pip install -r tests/requirements.txt
+    (venv) $ pip install -r requirements/requirements_dev.txt
     (venv) $ DJANGO_SETTINGS_MODULE=tests.settings django-admin.py test
 
 Measuring code coverage, continuing the steps above:
