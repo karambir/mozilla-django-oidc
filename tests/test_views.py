@@ -494,7 +494,8 @@ class OIDCLogoutViewTestCase(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, '/example-logout')
 
-    @override_settings(LOGOUT_REDIRECT_URL='/example-logout')
+    @override_settings(LOGOUT_REDIRECT_URL='/logged-out')
+    @override_settings(OIDC_OP_LOGOUT_URL_METHOD='tests.test_views.my_custom_op_logout')
     def test_post(self):
         user = User.objects.create_user('example_username')
         url = reverse('oidc_logout')
@@ -507,7 +508,7 @@ class OIDCLogoutViewTestCase(TestCase):
             mock_logout.assert_called_once_with(request)
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, '/example-logout')
+        self.assertEqual(response.url, 'http://testserver/logged/out')
 
     @override_settings(LOGOUT_REDIRECT_URL='/example-logout')
     @override_settings(OIDC_OP_LOGOUT_URL_METHOD='tests.test_views.my_custom_op_logout')

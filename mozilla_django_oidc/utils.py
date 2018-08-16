@@ -143,7 +143,7 @@ def verify_logout_token(token, **kwargs):
     OIDC_RP_IDP_SIGN_KEY = import_from_settings('OIDC_RP_IDP_SIGN_KEY', None)
 
     if (OIDC_RP_SIGN_ALGO.startswith('RS') and
-        (OIDC_RP_IDP_SIGN_KEY is None and OIDC_OP_JWKS_ENDPOINT is None)):
+            (OIDC_RP_IDP_SIGN_KEY is None and OIDC_OP_JWKS_ENDPOINT is None)):
         msg = '{} alg requires OIDC_RP_IDP_SIGN_KEY or OIDC_OP_JWKS_ENDPOINT to be configured.'
         raise ImproperlyConfigured(msg.format(OIDC_RP_SIGN_ALGO))
 

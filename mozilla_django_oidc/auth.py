@@ -259,7 +259,9 @@ class OIDCAuthenticationBackend(ModelBackend):
         payload = self.verify_token(id_token, nonce=nonce)
 
         if payload:
-            sid = payload.get('sid')
+            sid = None
+            if isinstance(payload, dict):
+                sid = payload.get('sid')
             self.store_tokens(access_token, id_token, sid=sid)
             try:
                 return self.get_or_create_user(access_token, id_token, payload)
