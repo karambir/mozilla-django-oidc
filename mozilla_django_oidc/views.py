@@ -244,7 +244,7 @@ def get_op_logout_url(request=None):
         'returnTo': post_redirect_uri,  # Auth0 specific parameter
     }
     is_id_token = import_from_settings('OIDC_STORE_ID_TOKEN', False)
-    if is_id_token and request:
+    if is_id_token and request and request.session.get('oidc_id_token'):
         params['id_token_hint'] = request.session.get('oidc_id_token')
     query = urlencode(params)
     redirect_url = '{url}?{query}'.format(
