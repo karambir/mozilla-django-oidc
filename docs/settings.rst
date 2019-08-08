@@ -115,6 +115,11 @@ of ``mozilla-django-oidc``.
 
    The OpenID Connect scopes to request during login.
 
+   .. warning::
+
+      When using custom scopes consider overriding the :ref:`claim verification method <advanced_claim_verification>`
+      since the default one only works for the default ``mozilla-django-oidc`` configuration.
+
 .. py:attribute:: OIDC_STORE_ACCESS_TOKEN
 
    :default: ``False``
@@ -213,3 +218,9 @@ of ``mozilla-django-oidc``.
    .. seealso::
 
       https://tools.ietf.org/html/rfc7519#section-6
+
+.. py:attribute:: OIDC_TOKEN_USE_BASIC_AUTH
+
+   :default: False
+
+   Use HTTP Basic Authentication instead of sending the client secret in token request POST body.

@@ -26,3 +26,6 @@ Contributors
 * Rob Hudson (`@robhudson <https://github.com/robhudson>`_)
 * Garand Tyson (`@SirTyson <https://github.com/SirTyson>`_)
 * Justin Azoff (`@JustinAzoff <https://github.com/JustinAzoff>`_)
+* Antti Palola (`@anttipalola <https://github.com/anttipalola>`_)
+* Bono de Visser (`@kerrermanisNL <https://github.com/kerrermanisNL>`_)
+* Chris Brantley (`@chrisbrantley <https://github.com/chrisbrantley>`_)

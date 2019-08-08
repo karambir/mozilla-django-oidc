@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import requests
+from requests.auth import HTTPBasicAuth
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
@@ -50,13 +51,13 @@ class OIDCAuthenticationBackend(ModelBackend):
 
     def __init__(self, *args, **kwargs):
         """Initialize settings."""
-        self.OIDC_OP_TOKEN_ENDPOINT = import_from_settings('OIDC_OP_TOKEN_ENDPOINT')
-        self.OIDC_OP_USER_ENDPOINT = import_from_settings('OIDC_OP_USER_ENDPOINT')
-        self.OIDC_OP_JWKS_ENDPOINT = import_from_settings('OIDC_OP_JWKS_ENDPOINT', None)
-        self.OIDC_RP_CLIENT_ID = import_from_settings('OIDC_RP_CLIENT_ID')
-        self.OIDC_RP_CLIENT_SECRET = import_from_settings('OIDC_RP_CLIENT_SECRET')
-        self.OIDC_RP_SIGN_ALGO = import_from_settings('OIDC_RP_SIGN_ALGO', 'HS256')
-        self.OIDC_RP_IDP_SIGN_KEY = import_from_settings('OIDC_RP_IDP_SIGN_KEY', None)
+        self.OIDC_OP_TOKEN_ENDPOINT = self.get_settings('OIDC_OP_TOKEN_ENDPOINT')
+        self.OIDC_OP_USER_ENDPOINT = self.get_settings('OIDC_OP_USER_ENDPOINT')
+        self.OIDC_OP_JWKS_ENDPOINT = self.get_settings('OIDC_OP_JWKS_ENDPOINT', None)
+        self.OIDC_RP_CLIENT_ID = self.get_settings('OIDC_RP_CLIENT_ID')
+        self.OIDC_RP_CLIENT_SECRET = self.get_settings('OIDC_RP_CLIENT_SECRET')
+        self.OIDC_RP_SIGN_ALGO = self.get_settings('OIDC_RP_SIGN_ALGO', 'HS256')
+        self.OIDC_RP_IDP_SIGN_KEY = self.get_settings('OIDC_RP_IDP_SIGN_KEY', None)
 
         if (self.OIDC_RP_SIGN_ALGO.startswith('RS') and
                 (self.OIDC_RP_IDP_SIGN_KEY is None and self.OIDC_OP_JWKS_ENDPOINT is None)):
@@ -64,6 +65,10 @@ class OIDCAuthenticationBackend(ModelBackend):
             raise ImproperlyConfigured(msg.format(self.OIDC_RP_SIGN_ALGO))
 
         self.UserModel = get_user_model()
+
+    @staticmethod
+    def get_settings(attr, *args):
+        return import_from_settings(attr, *args)
 
     def filter_users_by_claims(self, claims):
         """Return all users matching the specified email."""
@@ -74,24 +79,28 @@ class OIDCAuthenticationBackend(ModelBackend):
 
     def verify_claims(self, claims):
         """Verify the provided claims to decide if authentication should be allowed."""
+
+        # Verify claims required by default configuration
+        scopes = self.get_settings('OIDC_RP_SCOPES', 'openid email')
+        if 'email' in scopes.split():
+            return 'email' in claims
+
+        LOGGER.warning('Custom OIDC_RP_SCOPES defined. '
+                       'You need to override `verify_claims` for custom claims verification.')
+
         return True
 
     def create_user(self, claims):
         """Return object for a newly created user account."""
-
         email = claims.get('email')
-        if not email:
-            return None
-
         username = self.get_username(claims)
-
         return self.UserModel.objects.create_user(username, email)
 
     def get_username(self, claims):
         """Generate username based on claims."""
         # bluntly stolen from django-browserid
         # https://github.com/mozilla/django-browserid/blob/master/django_browserid/auth.py
-        username_algo = import_from_settings('OIDC_USERNAME_ALGO', None)
+        username_algo = self.get_settings('OIDC_USERNAME_ALGO', None)
 
         if username_algo:
             if isinstance(username_algo, six.string_types):
@@ -136,7 +145,7 @@ class OIDCAuthenticationBackend(ModelBackend):
         """Get the signing key by exploring the JWKS endpoint of the OP."""
         response_jwks = requests.get(
             self.OIDC_OP_JWKS_ENDPOINT,
-            verify=import_from_settings('OIDC_VERIFY_SSL', True)
+            verify=self.get_settings('OIDC_VERIFY_SSL', True)
         )
         response_jwks.raise_for_status()
         jwks = response_jwks.json()
@@ -159,7 +168,7 @@ class OIDCAuthenticationBackend(ModelBackend):
 
     def get_payload_data(self, token, key):
         """Helper method to get the payload of the JWT token."""
-        if import_from_settings('OIDC_ALLOW_UNSECURED_JWT', False):
+        if self.get_settings('OIDC_ALLOW_UNSECURED_JWT', False):
             header, payload_data, signature = token.split(b'.')
             header = json.loads(smart_text(b64decode(header)))
 
@@ -195,7 +204,7 @@ class OIDCAuthenticationBackend(ModelBackend):
         payload = json.loads(payload_data.decode('utf-8'))
         token_nonce = payload.get('nonce')
 
-        if import_from_settings('OIDC_USE_NONCE', True) and nonce != token_nonce:
+        if self.get_settings('OIDC_USE_NONCE', True) and nonce != token_nonce:
             msg = 'JWT Nonce verification failed.'
             raise SuspiciousOperation(msg)
         return payload
@@ -203,10 +212,20 @@ class OIDCAuthenticationBackend(ModelBackend):
     def get_token(self, payload):
         """Return token object as a dictionary."""
 
+        auth = None
+        if self.get_settings('OIDC_TOKEN_USE_BASIC_AUTH', False):
+            # When Basic auth is defined, create the Auth Header and remove secret from payload.
+            user = payload.get('client_id')
+            pw = payload.get('client_secret')
+
+            auth = HTTPBasicAuth(user, pw)
+            del payload['client_secret']
+
         response = requests.post(
             self.OIDC_OP_TOKEN_ENDPOINT,
             data=payload,
-            verify=import_from_settings('OIDC_VERIFY_SSL', True))
+            auth=auth,
+            verify=self.get_settings('OIDC_VERIFY_SSL', True))
         response.raise_for_status()
         return response.json()
 
@@ -219,7 +238,7 @@ class OIDCAuthenticationBackend(ModelBackend):
             headers={
                 'Authorization': 'Bearer {0}'.format(access_token)
             },
-            verify=import_from_settings('OIDC_VERIFY_SSL', True))
+            verify=self.get_settings('OIDC_VERIFY_SSL', True))
         user_response.raise_for_status()
         return user_response.json()
 
@@ -237,8 +256,8 @@ class OIDCAuthenticationBackend(ModelBackend):
         if not code or not state:
             return None
 
-        reverse_url = import_from_settings('OIDC_AUTHENTICATION_CALLBACK_URL',
-                                           'oidc_authentication_callback')
+        reverse_url = self.get_settings('OIDC_AUTHENTICATION_CALLBACK_URL',
+                                        'oidc_authentication_callback')
 
         token_payload = {
             'client_id': self.OIDC_RP_CLIENT_ID,
@@ -276,10 +295,10 @@ class OIDCAuthenticationBackend(ModelBackend):
         """Store OIDC tokens."""
         session = self.request.session
 
-        if import_from_settings('OIDC_STORE_ACCESS_TOKEN', False):
+        if self.get_settings('OIDC_STORE_ACCESS_TOKEN', False):
             session['oidc_access_token'] = access_token
 
-        if import_from_settings('OIDC_STORE_ID_TOKEN', False):
+        if self.get_settings('OIDC_STORE_ID_TOKEN', False):
             session['oidc_id_token'] = id_token
 
         if import_from_settings('OIDC_STORE_SID', True) and sid:
@@ -308,7 +327,7 @@ class OIDCAuthenticationBackend(ModelBackend):
             # bail. Randomly selecting one seems really wrong.
             msg = 'Multiple users returned'
             raise SuspiciousOperation(msg)
-        elif import_from_settings('OIDC_CREATE_USER', True):
+        elif self.get_settings('OIDC_CREATE_USER', True):
             user = self.create_user(user_info)
             return user
         else:

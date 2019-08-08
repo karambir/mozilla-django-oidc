@@ -6,17 +6,16 @@ except ImportError:
     # Python < 3
     from urllib import urlencode
 
-import django
 try:
     from django.urls import reverse
 except ImportError:
     # Django < 2.0.0
     from django.core.urlresolvers import reverse
-from django.contrib.auth import BACKEND_SESSION_KEY
+from django.contrib.auth import BACKEND_SESSION_KEY, logout
+from django.core.cache import cache
 from django.http import HttpResponseRedirect, JsonResponse
 from django.utils.crypto import get_random_string
-from django.contrib import auth
-from django.core.cache import cache
+from django.utils.deprecation import MiddlewareMixin
 from django.utils.functional import cached_property
 from django.utils.module_loading import import_string
 
@@ -30,15 +29,6 @@ from mozilla_django_oidc.utils import (
 LOGGER = logging.getLogger(__name__)
 
 
-# Django 1.10 makes changes to how middleware work. In Django 1.10+, we want to
-# use the mixin so that our middleware works as is.
-if django.VERSION >= (1, 10):
-    from django.utils.deprecation import MiddlewareMixin
-else:
-    class MiddlewareMixin(object):
-        pass
-
-
 class SessionRefresh(MiddlewareMixin):
     """Refreshes the session with the OIDC RP after expiry seconds
 
@@ -46,6 +36,10 @@ class SessionRefresh(MiddlewareMixin):
     if not, force the user to re-authenticate silently.
 
     """
+
+    @staticmethod
+    def get_settings(attr, *args):
+        return import_from_settings(attr, *args)
 
     @cached_property
     def exempt_urls(self):
@@ -58,7 +52,7 @@ class SessionRefresh(MiddlewareMixin):
         :returns: list of url paths (for example "/oidc/callback/")
 
         """
-        exempt_urls = list(import_from_settings('OIDC_EXEMPT_URLS', []))
+        exempt_urls = list(self.get_settings('OIDC_EXEMPT_URLS', []))
         exempt_urls.extend([
             'oidc_authentication_init',
             'oidc_authentication_callback',
@@ -107,9 +101,9 @@ class SessionRefresh(MiddlewareMixin):
 
         LOGGER.debug('id token has expired')
         # The id_token has expired, so we have to re-authenticate silently.
-        auth_url = import_from_settings('OIDC_OP_AUTHORIZATION_ENDPOINT')
-        client_id = import_from_settings('OIDC_RP_CLIENT_ID')
-        state = get_random_string(import_from_settings('OIDC_STATE_SIZE', 32))
+        auth_url = self.get_settings('OIDC_OP_AUTHORIZATION_ENDPOINT')
+        client_id = self.get_settings('OIDC_RP_CLIENT_ID')
+        state = get_random_string(self.get_settings('OIDC_STATE_SIZE', 32))
 
         # Build the parameters as if we were doing a real auth handoff, except
         # we also include prompt=none.
@@ -121,12 +115,12 @@ class SessionRefresh(MiddlewareMixin):
                 reverse('oidc_authentication_callback')
             ),
             'state': state,
-            'scope': import_from_settings('OIDC_RP_SCOPES', 'openid email'),
+            'scope': self.get_settings('OIDC_RP_SCOPES', 'openid email'),
             'prompt': 'none',
         }
 
-        if import_from_settings('OIDC_USE_NONCE', True):
-            nonce = get_random_string(import_from_settings('OIDC_NONCE_SIZE', 32))
+        if self.get_settings('OIDC_USE_NONCE', True):
+            nonce = get_random_string(self.get_settings('OIDC_NONCE_SIZE', 32))
             params.update({
                 'nonce': nonce
             })
@@ -180,6 +174,6 @@ class LogoutSIDTokenUser(SessionRefresh):
         sid_cache_key_prefix = import_from_settings('OIDC_LOGOUT_SID_KEY_PREFIX', 'oidc_sid')
         sid_cache_key = '{}_{}'.format(sid_cache_key_prefix, sid)
         if cache.get(sid_cache_key):
-            auth.logout(request)
+            logout(request)
             cache.delete(sid_cache_key)
         return
